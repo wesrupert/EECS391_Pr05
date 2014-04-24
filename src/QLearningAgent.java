@@ -209,6 +209,13 @@ public class QLearningAgent extends Agent {
 	
 	private double qFunction(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations) {
 		// TODO replace the 1.0's with actual f's
+		// Possible features:
+		// # of other friendly units currently attacking enemy
+		// health of footman
+		// health of enemy
+		// is enemy the current target of footman?
+		// how many other footmen are attacking enemy?
+		// what is the ratio of hitpoints of enemy to footman
 		return w[0] +
 				w[1] * 1.0 +
 				w[2] * 1.0 +
