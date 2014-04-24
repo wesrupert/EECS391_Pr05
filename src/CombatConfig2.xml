@@ -1,5 +1,5 @@
 <Configuration>
-	<Map>rl_5fv5f.xml</Map>
+	<Map>rl_10fv10f.xml</Map>
 	<Player Id="0">
 		<AgentClass>
 			<ClassName>QLearningAgent</ClassName>
