@@ -60,11 +60,16 @@ public class QLearningAgent extends Agent {
 	private int gameNumber = 1;
 	private int episodes = 100;
 	private double[] w;
+	private float curEpsilon;
+	private double currentGameReward = 0.0;
+	private double avgGameReward = 0.0;
 	
 	private StateView currentState;
 	
 	public QLearningAgent(int playernum, String[] args) {
 		super(playernum);
+		
+		curEpsilon = EPSILON;
 		
 		if (args.length > 0) {
 			episodes = Integer.parseInt(args[0]);
@@ -72,7 +77,7 @@ public class QLearningAgent extends Agent {
 		
 		w = new double[FEATURES];
 		for (int i = 0; i < w.length; i++) {
-			w[i] = 1;
+			w[i] = Math.random() * 2 - 1;
 		}
 		
 	}
@@ -97,7 +102,13 @@ public class QLearningAgent extends Agent {
 			}
 		}
 		
-		evaluationPhase = gameNumber % 15 > 10;
+		currentGameReward = 0.0;
+		
+		evaluationPhase = (gameNumber - 1) % 15 > 9;
+		
+		if (!evaluationPhase) {
+			avgGameReward = 0.0;
+		}
 		
 		Map<Integer,Action> builder = new HashMap<Integer,Action>();
 		
@@ -144,6 +155,8 @@ public class QLearningAgent extends Agent {
 		for (Integer footman : curFootmen) {
 			double reward = getReward(footman, attack.get(footman), curFootmen, curEnemyFootmen, curUnitHealth, curUnitLocations);
 			
+			currentGameReward += reward;
+			
 			if (!evaluationPhase) {
 				updateQFunction(footman, reward);
 			}
@@ -169,7 +182,18 @@ public class QLearningAgent extends Agent {
 	public void terminalStep(StateView newstate, History.HistoryView statehistory) {
 		step++;
 		
-		//TODO print out stuff when we are in evaluation mode
+		if (evaluationPhase) {
+			avgGameReward += (currentGameReward - avgGameReward) / ((gameNumber - 1) % 15 - 9);
+			System.out.println("Played evaluation game " + ((gameNumber - 1) % 15 - 9) );
+		} else {
+			System.out.println("Played game " + ((gameNumber / 15) * 10 + (gameNumber % 15)));
+		}
+		
+		if (gameNumber % 15 == 0) {
+			curEpsilon = curEpsilon < 0 ? 0 : curEpsilon - 0.002f;
+			
+			System.out.printf("Games trained on: %d\tAverage Reward:%f\n", ((gameNumber / 15) * 10), avgGameReward);
+		}
 		
 		if (gameNumber == episodes) {
 			System.exit(0);
@@ -181,14 +205,14 @@ public class QLearningAgent extends Agent {
 	private boolean eventHasHappened(List<Integer> curFootmen, List<Integer> curEnemyFootmen, Map<Integer, Integer> curUnitHealth) {
 		// TODO Auto-generated method stub
 		// Needs to determine if a significant event has passed, like someone getting attacked
-		return false;
+		return true;
 	}
 
 	private Map<Integer, Integer> assignTargets(List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations) {
 		Map<Integer, Integer> attack = new HashMap<Integer, Integer>();
 		
 		for (Integer footman : footmen) {
-			if (1.0 - EPSILON < Math.random() && !evaluationPhase) {
+			if (1.0 - curEpsilon < Math.random() && !evaluationPhase) {
 				attack.put(footman, enemyFootmen.get((int)(Math.random() * enemyFootmen.size())));
 			} else {
 				double maxQ = Double.NEGATIVE_INFINITY;
@@ -216,6 +240,7 @@ public class QLearningAgent extends Agent {
 		// is enemy the current target of footman?
 		// how many other footmen are attacking enemy?
 		// what is the ratio of hitpoints of enemy to footman
+		// is enemy my closest enemy?
 		return w[0] +
 				w[1] * 1.0 +
 				w[2] * 1.0 +
@@ -252,6 +277,7 @@ public class QLearningAgent extends Agent {
 	public static String getUsage() {
 		return "Uses Q learning to defeat enemies.";
 	}
+	
 	@Override
 	public void savePlayerData(OutputStream os) {
 		//this agent lacks learning and so has nothing to persist.
