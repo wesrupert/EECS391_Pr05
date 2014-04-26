@@ -42,9 +42,9 @@ import edu.cwru.sepia.environment.model.state.Unit.UnitView;
  */
 public class QLearningAgent extends Agent {
 	private static final long serialVersionUID = -4047208702628325380L;
-	private static final float DISCOUNT_FACTOR = 0.9f;
-	private static final float LEARNING_RATE = 0.0001f;
-	private static final float EPSILON = 0.02f;
+	private static final float LAMBDA = 0.9f; // Discount factor
+	private static final float ALPHA = 0.0001f; // Learning rate
+	private static final float EPSILON = 0.02f; // For GLIE exploration
 	private static final int FEATURES = 5;
 
 	private int step;
@@ -59,10 +59,11 @@ public class QLearningAgent extends Agent {
 	private boolean evaluationPhase = false;
 	private int gameNumber = 1;
 	private int episodes = 100;
-	private double[] w;
+	private boolean firstRound = true;
 	private float curEpsilon;
 	private double currentGameReward = 0.0;
 	private double avgGameReward = 0.0;
+	private Features features;
 	
 	private StateView currentState;
 	
@@ -75,32 +76,14 @@ public class QLearningAgent extends Agent {
 			episodes = Integer.parseInt(args[0]);
 		}
 		
-		w = new double[FEATURES];
-		for (int i = 0; i < w.length; i++) {
-			w[i] = Math.random() * 2 - 1;
-		}
-		
+		features = new Features();
 	}
 
 	
 	@Override
 	public Map<Integer, Action> initialStep(StateView newstate, History.HistoryView statehistory) {
 		step = 0;
-		
 		currentState = newstate;
-		
-		for (UnitView unit : currentState.getAllUnits()) {
-			String unitTypeName = unit.getTemplateView().getName();
-			if(unitTypeName.equals("Footman")) {
-				unitHealth.put(unit.getID(), unit.getHP());
-				unitLocations.put(unit.getID(), new Pair<Integer, Integer>(unit.getXPosition(), unit.getYPosition()));
-				if (currentState.getUnits(playernum).contains(unit)) {
-					footmen.add(unit.getID());
-				} else {
-					enemyFootmen.add(unit.getID());
-				}
-			}
-		}
 		
 		currentGameReward = 0.0;
 		
@@ -110,16 +93,9 @@ public class QLearningAgent extends Agent {
 			avgGameReward = 0.0;
 		}
 		
-		Map<Integer,Action> builder = new HashMap<Integer,Action>();
+		firstRound = true;
 		
-		attack = assignTargets(footmen, enemyFootmen, unitHealth, unitLocations);
-		
-		for (Integer footmanID : attack.keySet()) {
-			Action b = TargetedAction.createCompoundAttack(footmanID, attack.get(footmanID));
-			builder.put(footmanID, b);
-		}
-		
-		return builder;
+		return middleStep(newstate, statehistory);
 	}
 
 	@Override
@@ -148,20 +124,25 @@ public class QLearningAgent extends Agent {
 			}
 		}
 		
-		if (!eventHasHappened(curFootmen, curEnemyFootmen, curUnitHealth)) {
-			return builder;
-		}
-		
-		for (Integer footman : curFootmen) {
-			double reward = getReward(footman, attack.get(footman), curFootmen, curEnemyFootmen, curUnitHealth, curUnitLocations);
-			
-			currentGameReward += reward;
-			
-			if (!evaluationPhase) {
-				updateQFunction(footman, reward);
+		if (!firstRound) {
+			if (!eventHasHappened(curFootmen, curEnemyFootmen, curUnitHealth)) {
+				return builder;
 			}
+			
+			for (Integer footman : curFootmen) {
+				double reward = getReward(footman, attack.get(footman), curFootmen, curEnemyFootmen, curUnitHealth, curUnitLocations);
+				
+				currentGameReward += reward;
+				
+				if (!evaluationPhase) {
+					updateQFunction(reward, footman, attack.get(footman), curFootmen, curEnemyFootmen, curUnitHealth, curUnitLocations, curUnitHealth);
+				}
+			}
+		} else {
+			firstRound = false;
 		}
 		
+		// Update previous state to current state
 		footmen = curFootmen;
 		enemyFootmen = curEnemyFootmen;
 		unitLocations = curUnitLocations;
@@ -203,9 +184,23 @@ public class QLearningAgent extends Agent {
 	}
 	
 	private boolean eventHasHappened(List<Integer> curFootmen, List<Integer> curEnemyFootmen, Map<Integer, Integer> curUnitHealth) {
-		// TODO Auto-generated method stub
 		// Needs to determine if a significant event has passed, like someone getting attacked
-		return true;
+		if (curFootmen.size() < footmen.size() || curEnemyFootmen.size() < enemyFootmen.size()) {
+			// uh oh, they dead
+			return true;
+		}
+		
+		boolean someoneInjured = false;
+		
+		for (Integer footman : curFootmen) {
+			someoneInjured |= (curUnitHealth.get(footman) < unitHealth.get(footman));
+		}
+		
+		for (Integer footman : curEnemyFootmen) {
+			someoneInjured |= (curUnitHealth.get(footman) < unitHealth.get(footman));
+		}
+		
+		return someoneInjured;
 	}
 
 	private Map<Integer, Integer> assignTargets(List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations) {
@@ -218,7 +213,7 @@ public class QLearningAgent extends Agent {
 				double maxQ = Double.NEGATIVE_INFINITY;
 				int currentTarget = enemyFootmen.get(0);
 				for (Integer enemy : enemyFootmen) {
-					double curQ = qFunction(footman, enemy, footmen, enemyFootmen, unitHealth, unitLocations);
+					double curQ = qFunction(footman, enemy, footmen, enemyFootmen, unitHealth, unitLocations, this.attack);
 					if (curQ > maxQ) {
 						maxQ = curQ;
 						currentTarget = enemy;
@@ -231,27 +226,24 @@ public class QLearningAgent extends Agent {
 		return attack;
 	}
 	
-	private double qFunction(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations) {
-		// TODO replace the 1.0's with actual f's
-		// Possible features:
-		// # of other friendly units currently attacking enemy
-		// health of footman
-		// health of enemy
-		// is enemy the current target of footman?
-		// how many other footmen are attacking enemy?
-		// what is the ratio of hitpoints of enemy to footman
-		// is enemy my closest enemy?
-		return w[0] +
-				w[1] * 1.0 +
-				w[2] * 1.0 +
-				w[3] * 1.0 + 
-				w[4] * 1.0;
-				// ...
+	private double qFunction(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen,
+			Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
+		// TODO make sure attack map will work on first time through
+		double[] f = Features.getFeatures(footman, enemy, footmen, enemyFootmen, unitHealth, unitLocations, attack);
+		return features.qFunction(f);
 	}
 	
-	private void updateQFunction(Integer footman, double reward) {
-		// TODO Auto-generated method stub
+	private void updateQFunction(double reward, Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen,
+			Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
 		
+		// TODO make sure attack prev/current state is right
+		double[] f = Features.getFeatures(footman, enemy, this.footmen, this.enemyFootmen, this.unitHealth, this.unitLocations, this.attack);
+		double previousQ = features.qFunction(f);
+		
+		// TODO update weights
+		//	Loop over features/weights:
+		//		delLoss = -(Reward + gamma * (max over a')[Q(s',a')-Q(s,a)]) * feature_i(s,a)
+		//		w_i <- w_i - alpha * delLoss
 	}
 	
 	private double getReward(Integer footman, Integer target, List<Integer> curFootmen, List<Integer> curEnemyFootmen, Map<Integer, Integer> curUnitHealth, Map<Integer, Pair<Integer, Integer>> curUnitLocations) {
