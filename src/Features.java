@@ -28,7 +28,13 @@ public class Features {
 		return q;
 	}
 	
-	public static double[] getFeatures(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
+	public static double[] getFeatures(State state, AttackAction action, Integer footman) {
+		return getFeatures(footman, action.getAttack().get(footman), state.getFootmen(),
+				state.getEnemyFootmen(),state.getUnitHealth(), state.getUnitLocations(), action.getAttack());
+	}
+	
+	public static double[] getFeatures(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen,
+			Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
 		double[] f = new double[NUM_FEATURES];
 		// constant
 		f[0] = 1;
@@ -59,6 +65,12 @@ public class Features {
 		
 		return f;
 	}
+	
+	public void updateWeights(double[] prevF, double delLoss, double alpha) {
+		for (int i = 0; i < w.length; i++) {
+			w[i] = w[i] - alpha * delLoss;
+		}
+	}
 
 	private static boolean isClosest(Integer footman, Integer enemy, List<Integer> enemyFootmen, Map<Integer, Pair<Integer, Integer>> unitLocations) {
 		int enemyDist = chebyshevDistance(unitLocations.get(footman), unitLocations.get(enemy));
@@ -77,4 +89,5 @@ public class Features {
 		int y = p.getY() - q.getY();
 		return Math.max(x, y);
 	}
+
 }
