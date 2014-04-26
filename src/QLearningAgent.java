@@ -42,20 +42,12 @@ import edu.cwru.sepia.environment.model.state.Unit.UnitView;
  */
 public class QLearningAgent extends Agent {
 	private static final long serialVersionUID = -4047208702628325380L;
-	private static final double GAMMA = 0.9; // Discount factor
+	private static final double GAMMA = 0.9; // Discount factor, orig 0.9
 	private static final double ALPHA = 0.0001; // Learning rate
-	private static final double EPSILON = 0.02; // For GLIE exploration
-	private static final int FEATURES = 5;
+	private static final double EPSILON = 0.02; // For GLIE exploration, orig 0.02
 
-	private int step;
 	private State prevState = null;
 	private AttackAction prevAction = new AttackAction(new HashMap<Integer, Integer>());
-	private List<Integer> footmen = new ArrayList<Integer>();
-	private List<Integer> enemyFootmen = new ArrayList<Integer>();
-	private Map<Integer, Integer> unitHealth = new HashMap<Integer, Integer>();
-	private Map<Integer, Pair<Integer, Integer>> unitLocations = new HashMap<Integer, Pair<Integer, Integer>>();
-	
-//	private Map<Integer, Integer> attack = new HashMap<Integer, Integer>();
 	
 	// If we are in evaluation phase, freeze the Q function and play 5 games
 	private boolean evaluationPhase = false;
@@ -84,7 +76,6 @@ public class QLearningAgent extends Agent {
 	
 	@Override
 	public Map<Integer, Action> initialStep(StateView newstate, History.HistoryView statehistory) {
-		step = 0;
 		currentState = newstate;
 		
 		currentGameReward = 0.0;
@@ -96,18 +87,15 @@ public class QLearningAgent extends Agent {
 		}
 		
 		
-		// TODO might not need to reset these? need to update Q function with last move of last game...
-//		firstRound = true;
-//		prevState = null;
-//		prevAction = new AttackAction(new HashMap<Integer, Integer>());
+		firstRound = true;
+		prevState = null;
+		prevAction = new AttackAction(new HashMap<Integer, Integer>());
 		
 		return middleStep(newstate, statehistory);
 	}
 
 	@Override
 	public Map<Integer,Action> middleStep(StateView newState, History.HistoryView statehistory) {
-		step++;
-		
 		Map<Integer,Action> builder = new HashMap<Integer,Action>();
 		currentState = newState;
 
@@ -137,25 +125,22 @@ public class QLearningAgent extends Agent {
 				return builder;
 			}
 			
-			for (Integer footman : curFootmen) {
-				double reward = getReward(currentState, prevState, prevAction, footman);
+			for (Integer footman : prevState.getFootmen()) {
 				
+				double reward = getReward(currentState, prevState, prevAction, footman);
+//				System.out.println("Reward = " + reward);
 				currentGameReward += reward;
 				
 				if (!evaluationPhase) {
 					updateQFunction(reward, currentState, prevState, prevAction, footman);
 				}
 			}
+//			System.out.println("");
 		} else {
 			firstRound = false;
 		}
 		
 		// Update previous state to current state
-		footmen = curFootmen;
-		enemyFootmen = curEnemyFootmen;
-		unitLocations = curUnitLocations;
-		unitHealth = curUnitHealth;
-		
 		prevState = currentState;
 		
 		prevAction = assignTargets(prevState, prevAction);
@@ -171,13 +156,20 @@ public class QLearningAgent extends Agent {
 
 	@Override
 	public void terminalStep(StateView newstate, History.HistoryView statehistory) {
-		step++;
+		boolean won = false;
+		for (UnitView unit : currentState.getUnits(playernum)) {
+			String unitTypeName = unit.getTemplateView().getName();
+			if (unitTypeName.equals("Footman")) {
+				won = true;
+			}
+		}
+		String winLose = won ? "won" : "lost";
 		
 		if (evaluationPhase) {
 			avgGameReward += (currentGameReward - avgGameReward) / ((gameNumber - 1) % 15 - 9);
-			System.out.println("Played evaluation game " + ((gameNumber - 1) % 15 - 9) );
+			System.out.println("Played evaluation game " + ((gameNumber - 1) % 15 - 9) + " and " + winLose + "(Reward:" + currentGameReward + ")");
 		} else {
-			System.out.println("Played game " + ((gameNumber / 15) * 10 + (gameNumber % 15)));
+			System.out.println("Played game " + ((gameNumber / 15) * 10 + (gameNumber % 15)) + " and " + winLose);
 		}
 		
 		if (gameNumber % 15 == 0) {
@@ -186,66 +178,59 @@ public class QLearningAgent extends Agent {
 			System.out.printf("Games trained on: %d\tAverage Reward:%f\n", ((gameNumber / 15) * 10), avgGameReward);
 		}
 		
-		if (gameNumber == episodes) {
+		if (((gameNumber / 15) * 10) >= episodes) {
 			System.exit(0);
 		}
 		
 		gameNumber++;
 	}
 	
+	/**
+	 * Determines if a significant event has happened, which is someone being attacked or someone dying.
+	 * @param curState
+	 * @param prevState
+	 * @return True, if an event has happened
+	 */
 	private boolean eventHasHappened(State curState, State prevState) {
-		// Needs to determine if a significant event has passed, like someone getting attacked
+		if (curState.getFootmen().size() < prevState.getFootmen().size()
+				|| curState.getEnemyFootmen().size() < prevState.getEnemyFootmen().size()) {
+			// uh oh, they dead
+			return true;
+		}
 		
-				if (curState.getFootmen().size() < prevState.getFootmen().size()
-						|| curState.getEnemyFootmen().size() < prevState.getEnemyFootmen().size()) {
-					// uh oh, they dead
-					return true;
-				}
-				
-				boolean someoneInjured = false;
-				
-				List<Integer> footmen = new ArrayList<Integer>();
-				footmen.addAll(curState.getFootmen());
-				footmen.addAll(curState.getEnemyFootmen());
-				
-				for (Integer footman : footmen) {
-					someoneInjured |= (curState.getUnitHealth().get(footman) < prevState.getUnitHealth().get(footman));
-				}
-				
-				return someoneInjured;
+		boolean someoneInjured = false;
+		
+		List<Integer> footmen = new ArrayList<Integer>();
+		footmen.addAll(curState.getFootmen());
+		footmen.addAll(curState.getEnemyFootmen());
+		
+		for (Integer footman : footmen) {
+			someoneInjured |= (curState.getUnitHealth().get(footman) < prevState.getUnitHealth().get(footman));
+		}
+		
+		return someoneInjured;
 	}
 	
-//	private boolean eventHasHappened(List<Integer> curFootmen, List<Integer> curEnemyFootmen, Map<Integer, Integer> curUnitHealth) {
-//		// Needs to determine if a significant event has passed, like someone getting attacked
-//		if (curFootmen.size() < footmen.size() || curEnemyFootmen.size() < enemyFootmen.size()) {
-//			// uh oh, they dead
-//			return true;
-//		}
-//		
-//		boolean someoneInjured = false;
-//		
-//		for (Integer footman : curFootmen) {
-//			someoneInjured |= (curUnitHealth.get(footman) < unitHealth.get(footman));
-//		}
-//		
-//		for (Integer footman : curEnemyFootmen) {
-//			someoneInjured |= (curUnitHealth.get(footman) < unitHealth.get(footman));
-//		}
-//		
-//		return someoneInjured;
-//	}
-	
+	/**
+	 * Uses the Q Function to determine which actions (Attack(Footman, Enemy)) maximizes Q
+	 * @param state
+	 * @param prevAction
+	 * @return A attack plan which assigns targets to each footman
+	 */
 	private AttackAction assignTargets(State state, AttackAction prevAction) {
 		Map<Integer, Integer> attack = new HashMap<Integer, Integer>();
 		
 		for (Integer footman : state.getFootmen()) {
 			if (1.0 - curEpsilon < Math.random() && !evaluationPhase) {
 				attack.put(footman, state.getEnemyFootmen().get((int)(Math.random() * state.getEnemyFootmen().size())));
+//				System.out.println("Hit random assignment");
 			} else {
 				double maxQ = Double.NEGATIVE_INFINITY;
 				int currentTarget = state.getEnemyFootmen().get(0);
+				
+				// Find the enemy that gives the highest Q function
 				for (Integer enemy : state.getEnemyFootmen()) {
-					double[] f = Features.getFeatures(state, prevAction, footman);
+					double[] f = Features.getFeatures(state, footman, enemy, prevAction);
 					double curQ = features.qFunction(f);
 					if (curQ > maxQ) {
 						maxQ = curQ;
@@ -258,106 +243,104 @@ public class QLearningAgent extends Agent {
 		
 		return new AttackAction(attack);
 	}
-
-//	private Map<Integer, Integer> assignTargets(List<Integer> footmen, List<Integer> enemyFootmen, Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations) {
-//		Map<Integer, Integer> attack = new HashMap<Integer, Integer>();
-//		
-//		for (Integer footman : footmen) {
-//			if (1.0 - curEpsilon < Math.random() && !evaluationPhase) {
-//				attack.put(footman, enemyFootmen.get((int)(Math.random() * enemyFootmen.size())));
-//			} else {
-//				double maxQ = Double.NEGATIVE_INFINITY;
-//				int currentTarget = enemyFootmen.get(0);
-//				for (Integer enemy : enemyFootmen) {
-//					double curQ = qFunction(footman, enemy, footmen, enemyFootmen, unitHealth, unitLocations, this.attack);
-//					if (curQ > maxQ) {
-//						maxQ = curQ;
-//						currentTarget = enemy;
-//					}
-//				}
-//				attack.put(footman, currentTarget);
-//			}
-//		}
-//		
-//		return attack;
-//	}
 	
-//	private double qFunction(Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen,
-//			Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
-//		// TODO make sure attack map will work on first time through
-//		double[] f = Features.getFeatures(footman, enemy, footmen, enemyFootmen, unitHealth, unitLocations, attack);
-//		return features.qFunction(f);
-//	}
-	
+	/**
+	 * Updates the weights associated with the Q function features based on the previous and current states
+	 * @param reward
+	 * @param curState
+	 * @param prevState
+	 * @param prevAction
+	 * @param footman
+	 */
 	private void updateQFunction(double reward, State curState, State prevState, AttackAction prevAction, Integer footman) {
-		
-		// TODO make sure attack prev/current state is right
-		double[] prevF = Features.getFeatures(prevState, prevAction, footman);
+		State currentState = new State(curState);
+		double[] prevF = Features.getFeatures(prevState, footman, prevAction.getAttack().get(footman), prevAction);
 		double previousQ = features.qFunction(prevF);
 		
-		AttackAction curAction = assignTargets(curState, prevAction);
 		
-		double[] newF = Features.getFeatures(curState, curAction, footman);
+		// footman can be dead at this point and therefore not in curState, so add him with health of 0
+		if (!currentState.getFootmen().contains(footman)) {
+			currentState.getFootmen().add(footman);
+			currentState.getUnitHealth().put(footman, 0);
+			currentState.getUnitLocations().put(footman, prevState.getUnitLocations().get(footman));
+		}
+		
+		// Find the max Q function w.r.t. the possible actions
+		AttackAction curAction = assignTargets(currentState, prevAction);
+		
+		// Find Q(s',a')
+		double[] newF = Features.getFeatures(currentState, footman, curAction.getAttack().get(footman), curAction);
 		double newQ = features.qFunction(newF);
 		
-		double delLoss = -(reward + GAMMA * newQ - previousQ);
+		double delLoss = (reward + GAMMA * newQ - previousQ);
 		
+		// updates the w vector
 		features.updateWeights(prevF, delLoss, ALPHA);
 	}
 	
-//	private void updateQFunction(double reward, Integer footman, Integer enemy, List<Integer> footmen, List<Integer> enemyFootmen,
-//			Map<Integer, Integer> unitHealth, Map<Integer, Pair<Integer, Integer>> unitLocations, Map<Integer, Integer> attack) {
-//		
-//		// TODO make sure attack prev/current state is right
-//		double[] f = Features.getFeatures(footman, enemy, this.footmen, this.enemyFootmen, this.unitHealth, this.unitLocations, this.attack);
-//		double previousQ = features.qFunction(f);
-//		
-//		// TODO update weights
-//		//	Loop over features/weights:
-//		//		delLoss = -(Reward + gamma * (max over a')[Q(s',a')-Q(s,a)]) * feature_i(s,a)
-//		//		w_i <- w_i - alpha * delLoss
-//	}
-	
+	/**
+	 * Finds the reward for a state and action
+	 * @param curState
+	 * @param prevState
+	 * @param prevAction
+	 * @param footman
+	 * @return The reward
+	 */
 	private double getReward(State curState, State prevState, AttackAction prevAction, Integer footman) {
 		double reward = -0.1;
 		
-		if (!prevState.getFootmen().contains(footman)) {
+		
+		curState.getUnitLocations().put(prevAction.getAttack().get(footman), prevState.getUnitLocations().get(prevAction.getAttack().get(footman)));
+		
+		if (!curState.getFootmen().contains(footman)) {
+			// Ally killed
 			reward -= 100.0;
 		} else {
+			// Ally injured
 			int healthLost = prevState.getUnitHealth().get(footman) - curState.getUnitHealth().get(footman);
 			reward -= healthLost;
 		}
 		
 		Integer target = prevAction.getAttack().get(footman);
-		if (!prevState.getEnemyFootmen().contains(target)) {
-			reward += 100;
-		} else {
-			int healthLost = prevState.getUnitHealth().get(target) - curState.getUnitHealth().get(target);
-			reward += healthLost;
+		
+		if (!curState.getFootmen().contains(footman)) {
+			curState.getUnitLocations().put(footman, prevState.getUnitLocations().get(footman));
+		}
+		if (!curState.getEnemyFootmen().contains(target)) {
+			curState.getUnitLocations().put(target, prevState.getUnitLocations().get(target));
+		}
+			
+		if (areAdjacent(curState.getUnitLocations().get(footman), curState.getUnitLocations().get(target))) {
+			if (!curState.getEnemyFootmen().contains(target)) {
+				// Enemy killed
+				reward += 100;
+			} else {
+				// Enemy injured
+				int healthLost = prevState.getUnitHealth().get(target) - curState.getUnitHealth().get(target);
+				reward += healthLost;
+			}
 		}
 		
 		return reward;
 	}
 	
-//	private double getReward(Integer footman, Integer target, List<Integer> curFootmen, List<Integer> curEnemyFootmen, Map<Integer, Integer> curUnitHealth, Map<Integer, Pair<Integer, Integer>> curUnitLocations) {
-//		double reward = -0.1;
-//		
-//		if (!footmen.contains(footman)) {
-//			reward -= 100.0;
-//		} else {
-//			int healthLost = unitHealth.get(footman) - curUnitHealth.get(footman);
-//			reward -= healthLost;
-//		}
-//		
-//		if (!enemyFootmen.contains(target)) {
-//			reward += 100;
-//		} else {
-//			int healthLost = unitHealth.get(target) - curUnitHealth.get(target);
-//			reward += healthLost;
-//		}
-//		
-//		return reward;
-//	}
+	/**
+	 * 
+	 * @param p
+	 * @param q
+	 * @return True, if p and q are adjacent
+	 */
+	private boolean areAdjacent(Pair<Integer, Integer> p, Pair<Integer, Integer> q) {
+		for (int i = p.getX() - 1; i <= p.getX() + 1; i++) {
+			for (int j = p.getY() - 1; j <= p.getY() + 1; j++) {
+				if (q.getX() == i && q.getY() == j) {
+					return true;
+				}
+			}
+		}
+		
+		return false;
+	}
 
 	public static String getUsage() {
 		return "Uses Q learning to defeat enemies.";
