@@ -167,9 +167,9 @@ public class QLearningAgent extends Agent {
 		
 		if (evaluationPhase) {
 			avgGameReward += (currentGameReward - avgGameReward) / ((gameNumber - 1) % 15 - 9);
-			System.out.println("Played evaluation game " + ((gameNumber - 1) % 15 - 9) + " and " + winLose + "(Reward:" + currentGameReward + ")");
+			System.out.printf("Played evaluation game %d and %s (Cumulative reward: %.2f)\n", ((gameNumber - 1) % 15 - 9), winLose, currentGameReward);
 		} else {
-			System.out.println("Played game " + ((gameNumber / 15) * 10 + (gameNumber % 15)) + " and " + winLose);
+			System.out.printf("Played game %d and %s\n", ((gameNumber / 15) * 10 + (gameNumber % 15)), winLose);
 		}
 		
 		if (gameNumber % 15 == 0) {
@@ -221,7 +221,7 @@ public class QLearningAgent extends Agent {
 		Map<Integer, Integer> attack = new HashMap<Integer, Integer>();
 		
 		for (Integer footman : state.getFootmen()) {
-			if (1.0 - curEpsilon < Math.random() && !evaluationPhase) {
+			if (!evaluationPhase && 1.0 - curEpsilon < Math.random()) {
 				attack.put(footman, state.getEnemyFootmen().get((int)(Math.random() * state.getEnemyFootmen().size())));
 //				System.out.println("Hit random assignment");
 			} else {
@@ -287,11 +287,13 @@ public class QLearningAgent extends Agent {
 	 * @return The reward
 	 */
 	private double getReward(State curState, State prevState, AttackAction prevAction, Integer footman) {
+		// Reward = -0.1 - FHP - FKILLED + EHP + EKILLED
 		double reward = -0.1;
 		
-		
+		// Update the attacking footman's location.
 		curState.getUnitLocations().put(prevAction.getAttack().get(footman), prevState.getUnitLocations().get(prevAction.getAttack().get(footman)));
 		
+		// (FHP/FKILLED) Update reward based on footman's health.
 		if (!curState.getFootmen().contains(footman)) {
 			// Ally killed
 			reward -= 100.0;
@@ -309,7 +311,8 @@ public class QLearningAgent extends Agent {
 		if (!curState.getEnemyFootmen().contains(target)) {
 			curState.getUnitLocations().put(target, prevState.getUnitLocations().get(target));
 		}
-			
+
+		// (EHP/EKILLED) Update reward based on enemy's health.
 		if (areAdjacent(curState.getUnitLocations().get(footman), curState.getUnitLocations().get(target))) {
 			if (!curState.getEnemyFootmen().contains(target)) {
 				// Enemy killed
