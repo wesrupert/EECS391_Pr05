@@ -59,6 +59,8 @@ public class QLearningAgent extends Agent {
 	private double avgGameReward = 0.0;
 	private Features features;
 	
+	private String finalOutput = "";
+	
 	private StateView currentState;
 	
 	public QLearningAgent(int playernum, String[] args) {
@@ -174,11 +176,14 @@ public class QLearningAgent extends Agent {
 		
 		if (gameNumber % 15 == 0) {
 			curEpsilon = curEpsilon < 0 ? 0 : curEpsilon - 0.002f;
-			
-			System.out.printf("Games trained on: %d\tAverage Reward:%f\n", ((gameNumber / 15) * 10), avgGameReward);
+			String out = String.format("Games trained on: %d\tAverage Reward:%f\n", ((gameNumber / 15) * 10), avgGameReward);
+			System.out.print(out);
+			finalOutput += out;
 		}
 		
 		if (((gameNumber / 15) * 10) >= episodes) {
+			System.out.println();
+			System.out.println(finalOutput);
 			System.exit(0);
 		}
 		
